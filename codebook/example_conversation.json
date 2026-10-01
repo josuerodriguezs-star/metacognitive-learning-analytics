@@ -1,0 +1,61 @@
+{
+  "Conversacion_ID": "conv_example_001",
+  "Participante_ID": "alumna_gonzalez",
+  "Participante_Nombre": "González López, María",
+  "Curso": "Applied AI in Education",
+  "Clave_Materia": "COMP4512",
+  "Programa": "Computer Science",
+  "Fecha_Inicio": "2024-10-15T10:00:00Z",
+  "Fecha_Termino": "2024-10-15T11:30:00Z",
+  "Total_Turnos": 8,
+  "turnos": [
+    {
+      "Turno_ID": 1,
+      "Rol": "Usuario",
+      "Timestamp": "2024-10-15T10:00:00Z",
+      "Texto": "I need to write an analysis of how Claude.ai shapes critical thinking in undergraduate writing. Before I start, can you help me outline three competing theoretical perspectives I should consider?"
+    },
+    {
+      "Turno_ID": 2,
+      "Rol": "Asistente",
+      "Timestamp": "2024-10-15T10:02:00Z",
+      "Texto": "Here are three perspectives:\n1. Augmentation view: Claude enhances analytical capacity\n2. Substitution view: Over-reliance may weaken independent thinking\n3. Transformation view: Claude fundamentally changes what 'critical thinking' means in the 21st century\n\nEach has theoretical roots and empirical implications."
+    },
+    {
+      "Turno_ID": 3,
+      "Rol": "Usuario",
+      "Timestamp": "2024-10-15T10:05:00Z",
+      "Texto": "Good start. I need to check something: does your framing actually match what my professor emphasized? She said the main concern is students losing the struggle—the cognitive effort required to think deeply. How does your framework address that risk?"
+    },
+    {
+      "Turno_ID": 4,
+      "Rol": "Asistente",
+      "Timestamp": "2024-10-15T10:07:00Z",
+      "Texto": "You're right. The substitution view does address that. If students always rely on Claude for initial framing, they may skip the struggle phase you mentioned. This connects to Vygotsky's zone of proximal development—if the AI does too much, students learn less."
+    },
+    {
+      "Turno_ID": 5,
+      "Rol": "Usuario",
+      "Timestamp": "2024-10-15T10:10:00Z",
+      "Texto": "I'm not totally convinced by that framing. It seems to assume that 'struggle' is always good, but the theory I'm reading suggests it's about *productive* struggle, not just difficulty. Let me propose a different angle: instead of 'Claude weakens thinking,' frame it as 'Claude redistributes the cognitive load.' That's more nuanced and matches Papert's constructionism better."
+    },
+    {
+      "Turno_ID": 6,
+      "Rol": "Asistente",
+      "Timestamp": "2024-10-15T10:12:00Z",
+      "Texto": "That's a more sophisticated framing. Instead of a binary threat, you're analyzing how different AI uses shift WHERE students direct cognitive effort. Some tasks become easier, freeing capacity for deeper analysis elsewhere."
+    },
+    {
+      "Turno_ID": 7,
+      "Rol": "Usuario",
+      "Timestamp": "2024-10-15T10:15:00Z",
+      "Texto": "Exactly. Now, before you help me draft an introduction, I want to make sure the three perspectives you outlined now align with my new framing. Can you rephrase them using 'redistribution of cognitive load' as the lens instead of threat/augmentation?"
+    },
+    {
+      "Turno_ID": 8,
+      "Rol": "Asistente",
+      "Timestamp": "2024-10-15T10:18:00Z",
+      "Texto": "1. Redistribution for efficiency: Claude shifts routine cognitive load, allowing focus on analysis\n2. Redistribution risks: Load shifts to different tasks, but students may not navigate those well\n3. Redistribution as transformation: Cognitive load patterns change fundamentally; new skills needed\n\nEach perspective now emphasizes where effort goes, not whether effort decreases."
+    }
+  ]
+}

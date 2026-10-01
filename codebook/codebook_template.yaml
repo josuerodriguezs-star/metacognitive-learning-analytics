@@ -1,0 +1,285 @@
+version: "1.0"
+nombre: "Metacognitive Process Analysis Architecture"
+descripcion: >
+  Qualitative coding framework for analyzing self-regulated learning (SRL)
+  in conversations with Large Language Models. Operationalizes Zimmerman's
+  cyclical model into four observable phases of learning regulation.
+
+unidad_analisis: "conversacion_turno"
+modelo_teorico: "Zimmerman (2002) - Self-Regulated Learning Cycle"
+
+nota_metodologica: >
+  This codebook operationalizes phases and processes of self-regulation
+  in observable behaviors within LLM conversations. Categories are assigned
+  to the user (student, researcher, writer), not the AI assistant.
+  An AI-suggested strategy only counts as evidence of user self-regulation
+  if the user adopts it, evaluates it, modifies it, or uses it to guide
+  their next action.
+
+criterio_critico_de_codificacion:
+  principio_general: >
+    Keywords are never sufficient evidence. They serve only as candidate
+    signals for review. A phase is coded only if the user performs an
+    observable self-regulatory action on their own process, product,
+    comprehension, strategy, or decision-making criterion.
+
+  prueba_minima_para_codificar:
+    regla: >
+      To assign a phase, at minimum TWO of these three components must
+      be present: objeto_regulado, accion_reguladora, and
+      criterio_o_consecuencia. If only one keyword appears without
+      these components, do not code.
+
+    objeto_regulado: >
+      What the user controls: comprehension, source, argument, style,
+      structure, progress, product, strategy, or decision.
+
+    accion_reguladora: >
+      What the user does: anticipate, verify, contrast, judge, correct,
+      change, delimit, decide, or reorient.
+
+    criterio_o_consecuencia: >
+      Against what or for what: rubric, source, theoretical rigor,
+      objective, audience, personal voice, coherence, utility, or next step.
+
+  decision_por_defecto:
+    - "If only lexical match, mark phase as No."
+    - "If instrumental request without process control, mark as No."
+    - "If slight doubt but does not affect important inference, mark as No rather than Requiere_Revision."
+    - "Use Requiere_Revision only for theoretically relevant cases with strong partial evidence."
+
+categorias:
+  Planificacion:
+    fase_zimmerman: "Forethought / anticipatory phase"
+    definicion_operacional: >
+      Evidence that the user anticipates, organizes, delimits, or defines
+      how to approach a task before requesting or developing a response.
+    indicadores_fuertes:
+      - "Defines an explicit objective."
+      - "States quality criteria or constraints before requesting the response."
+      - "Divides the task into steps or asks for a work route."
+      - "Requests plan, structure, schema, strategy, or sequence."
+      - "Asks the AI to ask questions before responding."
+      - "Specifies audience, format, purpose, or context to guide the response."
+
+    patrones_linguisticos:
+      fuertes:
+        - "\\bmy objective is\\b"
+        - "\\bneed to organize\\b"
+        - "\\bmake a plan\\b"
+        - "\\bbefore (responding|writing|you answer)\\b"
+        - "\\bfirst I want\\b"
+        - "\\bdivide.* into steps\\b"
+        - "\\bstep by step\\b"
+        - "\\bcriteria?\\b"
+        - "\\bstructure\\b"
+        - "\\bschema\\b"
+        - "\\bwith the objective\\b"
+        - "\\bin order to\\b"
+
+    ejemplos_alta_confianza:
+      - "My objective is to compare two theories; before I draft anything, give me comparison criteria."
+      - "First I want to understand the steps, then we do the final response."
+
+    regla_confianza: >
+      Alta if there is explicit objective, criterion, or strategy.
+      Media if only structure requested without context.
+      Baja-Media if it could be just a format preference.
+
+  Monitoreo:
+    fase_zimmerman: "Performance / execution phase"
+    definicion_operacional: >
+      Evidence that the user supervises their comprehension, progress,
+      quality, or alignment with task criteria while interacting with the AI.
+
+    indicadores_fuertes:
+      - "Declares confusion, doubt, or lack of comprehension."
+      - "Detects that something is missing from the response or their work."
+      - "Asks to verify accuracy, coherence, compliance, or consistency."
+      - "Contrasts the response against a rubric, prompt, criterion, or prior decision."
+      - "Asks if their interpretation or progress is correct."
+
+    patrones_linguisticos:
+      fuertes:
+        - "\\bI don't understand\\b"
+        - "\\bnot clear\\b"
+        - "\\bI'm confused\\b"
+        - "\\bsomething is missing\\b"
+        - "\\bis missing\\b"
+        - "\\bverify\\b"
+        - "\\breview if\\b"
+        - "\\bdoes this meet\\b"
+        - "\\bis this correct\\b"
+        - "\\bam I interpreting\\b"
+        - "\\baccording to\\b.*\\brubric\\b"
+        - "\\baccording to\\b.*\\bprompt\\b"
+
+      debiles:
+        - "\\bcan you elaborate\\b"
+        - "\\bgive me more detail\\b"
+        - "\\bexplain better\\b"
+
+    ejemplos_alta_confianza:
+      - "I don't understand the difference, can you show me examples?"
+      - "Review if this meets the rubric I sent you."
+
+    regla_confianza: >
+      Alta if user explicates confusion, verification, or contrast.
+      Media if only asking for clarification.
+      Baja-Media if unclear whether monitoring own process or just requesting content.
+
+  Evaluacion:
+    fase_zimmerman: "Self-reflection / evaluation phase"
+    definicion_operacional: >
+      Evidence that the user judges the quality, utility, pertinence,
+      sufficiency, or result of a response, product, strategy, or progress.
+
+    indicadores_fuertes:
+      - "Values whether a response works, doesn't work, is better, or is insufficient."
+      - "Compares alternatives and asks to decide which is better."
+      - "Evaluates a draft, argument, response, or product against criteria."
+      - "Identifies strengths, weaknesses, or limitations of the result."
+      - "Explains why a response does not meet expectations."
+
+    patrones_linguisticos:
+      fuertes:
+        - "\\bis too general\\b"
+        - "\\bdoes not meet\\b"
+        - "\\bthis helps\\b"
+        - "\\bthis doesn't help\\b"
+        - "\\nis better\\b"
+        - "\\bwhich is better\\b"
+        - "\\bcompare\\b"
+        - "\\bevaluate\\b"
+        - "\\bstrengths?\\b"
+        - "\\bweaknesses?\\b"
+        - "\\baccording to these criteria\\b"
+
+      debiles:
+        - "\\bI like\\b"
+        - "\\bis good\\b"
+        - "\\bperfect\\b"
+
+    ejemplos_alta_confianza:
+      - "This is too general and doesn't respond to the rubric."
+      - "Compare these two versions; which argues better?"
+
+    regla_confianza: >
+      Alta if judgment has criterion or consequence.
+      Media if judgment is clear but poorly justified.
+      Baja-Media if only a brief preference.
+
+  Adaptacion:
+    fase_zimmerman: "Cycle adjustment / strategic shift phase"
+    definicion_operacional: >
+      Evidence that the user modifies approach, strategy, format, criteria,
+      or work process based on evaluation, monitoring, difficulty, or new goals.
+
+    indicadores_fuertes:
+      - "Asks to redo the response changing approach or criteria."
+      - "Adjusts strategy after detecting a problem."
+      - "Reformulates the request with new restrictions."
+      - "Changes from final answer to step-by-step work, or vice versa."
+      - "Requests specific correction with explanation."
+
+    patrones_linguisticos:
+      fuertes:
+        - "\\bbetter.*(do it|let's|rewrite|reformulate|change)\\b"
+        - "\\bchange the approach\\b"
+        - "\\breformulate\\b"
+        - "\\bredo\\b"
+        - "\\btry again\\b"
+        - "\\bnow use\\b"
+        - "\\bnow do\\b"
+        - "\\bconsidering\\b"
+        - "\\binstead of\\b"
+        - "\\bstep by step\\b"
+        - "\\bcorrect.* because\\b"
+        - "\\badjust\\b"
+
+      debiles:
+        - "\\banother version\\b"
+        - "\\bshorter\\b"
+        - "\\blonger\\b"
+        - "\\bcontinue\\b"
+
+    ejemplos_alta_confianza:
+      - "This is too general; reformulate using examples from my research."
+      - "Does not meet the rubric; change approach and organize by criteria."
+
+    regla_confianza: >
+      Alta if change has motive or criterion.
+      Media if change is clear without motive.
+      Baja-Media if appears to be only superficial editing.
+
+reglas_globales:
+  atribucion:
+    - "Code only user turns for SRL."
+    - "Do not attribute to user strategies that appear only in AI response."
+
+  evidencia:
+    - "Preserve brief literal evidence for each category."
+    - "Allow multiple categories per turn."
+    - "Prefer conservative rules when in doubt."
+
+  criterio_breve_vs_opinion_aislada:
+    descripcion: >
+      Critical distinction to avoid both under-detecting real evidence
+      (briefly-formulated criteria) AND over-detecting noise (isolated opinions).
+
+    criterio_breve_es_valido: >
+      A brief causal or comparative reason ("I think version B is better because
+      X has better Y") counts as a complete criterion. Do not require extensive,
+      technical, or formally elaborate justification. Example: "I thought building
+      a mobile app, but I think a Chrome extension is better... it has better
+      visualization" contains all three components (regulated object: app type;
+      regulatory action: change decision; criterion: better visualization) and
+      should be coded as Adaptacion.
+
+    opinion_aislada_no_es_criterio_suficiente: >
+      An isolated opinion, preference, or comparison WITHOUT an identifiable
+      regulated object AND regulatory action from the speaker's own process
+      does NOT satisfy the minimum test—another component is still required.
+      Example of what NOT to code: "This is much better than the previous one"
+      or "I prefer X over Y" stated without describing any action or process
+      to which that preference is anchored.
+
+salida_por_turno:
+  columnas:
+    - "Conversacion_ID"
+    - "Turno_ID"
+    - "Rol"  # Usuario or Asistente
+    - "Texto"
+    - "Planificacion"
+    - "Monitoreo"
+    - "Evaluacion"
+    - "Adaptacion"
+    - "Evidencia_Planificacion"
+    - "Evidencia_Monitoreo"
+    - "Evidencia_Evaluacion"
+    - "Evidencia_Adaptacion"
+    - "Categorias_Autorregulacion"  # List of codes assigned
+    - "Justificacion_Codificacion"
+    - "Confianza"  # Alta, Media-Alta, Media, Baja-Media, Baja
+    - "Requiere_Revision"  # Si/No
+
+notas_de_uso:
+  adaptacion_a_nuevos_contextos: >
+    This framework is language-agnostic. To adapt: (1) translate linguistic
+    patterns to your language, (2) adjust examples to your educational context,
+    (3) test on 20-50 turns manually first, (4) refine based on results.
+
+  extension_futura: >
+    To add new categories: document theory, operational definition, minimum
+    evidence test, patterns, negative rules, and validate on 30+ turns.
+
+  garantia_de_calidad: >
+    This framework prioritizes precision over recall. False negatives (missing
+    some SRL) are acceptable; false positives (coding casual phrases as metacognition)
+    are minimized. Use corrective layers and the minimum evidence test strictly.
+
+salida_recomendada_para_ambiguos:
+  fase: "No"
+  Confianza: "Baja-Media"
+  Requiere_Revision: "No"
+  Justificacion_Codificacion: "Lexical match insufficient; does not contain regulated_object + regulatory_action + criterion/consequence."
