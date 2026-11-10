@@ -1,0 +1,59 @@
+-- Esquema de D1. Es idempotente: se puede volver a ejecutar sin romper nada.
+--   npx wrangler d1 execute yohual-conversaciones --remote --file=schema.sql
+--
+-- Aquí NUNCA se guarda el texto de las conversaciones. Solo correo,
+-- consentimiento y la fila de enlaces pendientes (el enlace se borra en
+-- cuanto endurance termina de leerlo).
+
+CREATE TABLE IF NOT EXISTS codigos (
+  email_hash  TEXT PRIMARY KEY,
+  codigo_hash TEXT NOT NULL,
+  expira_ts   INTEGER NOT NULL,
+  intentos    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS participantes (
+  id                     TEXT PRIMARY KEY,
+  email                  TEXT NOT NULL,
+  email_hash             TEXT NOT NULL UNIQUE,
+  creado_ts              INTEGER NOT NULL,
+  consentimiento_version TEXT,
+  consentimiento_ts      INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS trabajos (
+  id                     TEXT PRIMARY KEY,
+  participante_id        TEXT NOT NULL,
+  enlace                 TEXT,                       -- se pone en NULL al terminar
+  enlace_hash            TEXT NOT NULL,
+  plataforma             TEXT NOT NULL,
+  version_consentimiento TEXT NOT NULL,
+  estado                 TEXT NOT NULL DEFAULT 'en_cola',  -- en_cola | tomado | listo | error
+  fase                   TEXT NOT NULL DEFAULT 'en_cola',
+  turnos                 TEXT,                       -- JSON con los roles, p. ej. ["user","assistant"]
+  error                  TEXT,
+  creado_ts              INTEGER NOT NULL,
+  tomado_ts              INTEGER,
+  terminado_ts           INTEGER,
+  ultima_consulta_ts     INTEGER,
+  avisado                INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS ix_trabajos_estado ON trabajos (estado, creado_ts);
+CREATE INDEX IF NOT EXISTS ix_trabajos_persona ON trabajos (participante_id, creado_ts);
+-- Una misma persona no puede mandar dos veces el mismo enlace, salvo que el primero haya fallado.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_trabajo_enlace
+  ON trabajos (participante_id, enlace_hash) WHERE estado <> 'error';
+
+CREATE TABLE IF NOT EXISTS limites (
+  clave     TEXT NOT NULL,
+  ventana   INTEGER NOT NULL,
+  n         INTEGER NOT NULL,
+  expira_ts INTEGER NOT NULL,
+  PRIMARY KEY (clave, ventana)
+);
+
+CREATE TABLE IF NOT EXISTS meta (
+  clave TEXT PRIMARY KEY,
+  valor TEXT NOT NULL
+);

@@ -1,0 +1,14 @@
+[Unit]
+Description=Reglas de firewall del recolector de yohual
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Ajusta la ruta a donde clonaste el repositorio.
+ExecStart=/opt/yohual/endurance/firewall.sh instalar
+ExecStop=/opt/yohual/endurance/firewall.sh quitar
+
+[Install]
+WantedBy=multi-user.target

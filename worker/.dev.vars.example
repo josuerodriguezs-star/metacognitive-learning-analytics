@@ -1,0 +1,6 @@
+# Copia este archivo a .dev.vars para correr `npx wrangler dev` en local.
+# .dev.vars no se sube al repositorio.
+APP_SECRET=desarrollo-desarrollo-desarrollo-desarrollo-desarrollo-1234
+PULLER_TOKEN=puller-desarrollo-puller-desarrollo-puller-desarrollo-1234
+# "consola" imprime el código en la terminal en vez de enviarlo por correo.
+MODO_CORREO=consola

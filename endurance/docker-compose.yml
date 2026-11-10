@@ -1,0 +1,76 @@
+# endurance · recolector de conversaciones y su base de datos
+#
+# Ningún servicio publica puertos: endurance no escucha nada hacia afuera.
+# El recolector solo hace conexiones de salida (al Worker de Cloudflare y a
+# chatgpt.com). Mongo vive en una red "interna" sin salida a internet.
+#
+#   docker compose up -d                          enciende (y vuelve solo cada vez que prendes endurance)
+#   docker compose stop                           apaga y ya no vuelve solo
+#   docker compose run --rm recolector --una-vez  vacía la fila y termina
+
+name: yohual
+
+services:
+  mongo:
+    image: mongo:7.0
+    restart: unless-stopped
+    user: "999:999"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: transcripts
+      MONGO_APP_USER: ${MONGO_APP_USER}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD}
+    volumes:
+      - ${DATOS_DIR:-/srv/yohual}/mongo:/data/db
+      - ./mongo-init.sh:/docker-entrypoint-initdb.d/10-usuario.sh:ro
+    networks: [interna]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 1g
+    pids_limit: 300
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  recolector:
+    build:
+      context: ..
+      dockerfile: endurance/Dockerfile
+    image: yohual-recolector:local
+    restart: unless-stopped
+    init: true
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      WORKER_URL: ${WORKER_URL}
+      PULLER_TOKEN: ${PULLER_TOKEN}
+      MONGODB_URI: mongodb://${MONGO_APP_USER}:${MONGO_APP_PASSWORD}@mongo:27017/transcripts
+      INTERVALO_SEG: "15"
+      HOME: /tmp
+    networks: [interna, salida]
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 512
+    shm_size: 1gb
+    stop_grace_period: 30s
+
+networks:
+  # Sin salida a internet: aquí solo se hablan el recolector y Mongo.
+  interna:
+    internal: true
+  # Con salida a internet y subred fija, para que firewall.sh pueda impedirle
+  # alcanzar tu red local, tu tailnet y el propio endurance.
+  salida:
+    ipam:
+      config:
+        - subnet: 172.29.77.0/24

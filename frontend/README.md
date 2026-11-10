@@ -1,57 +1,35 @@
-# Frontend — formulario de transcripción
+# Frontend
 
-Sitio estático (HTML/CSS/JS puro, sin frameworks ni build step) que
-llama al backend en Render y descarga el `.zip` con los `.docx`.
-
-## Estructura
+Sitio estático (HTML/CSS/JS, sin frameworks ni build). Dos interfaces:
 
 ```
 frontend/
-  index.html   → formulario (metadatos de actividad + filas de alumnos)
-  style.css    → diseño
-  script.js    → lógica (filas dinámicas, envío, descarga)
-  config.js    → URL del backend (editar aquí)
-  vercel.json  → config mínima de Vercel
+  index.html       → recolector para participantes (correo, consentimiento, enlace, lectura, gracias)
+  style.css        → diseño
+  script.js        → lógica y modo demostración
+  config.js        → enlace de inicio, correo de contacto e invitaciones de la pantalla final
+  _headers         → cabeceras de seguridad (CSP estricta, HSTS, etc.)
+  .assetsignore    → lo que el Worker NO publica (profesores/, README, vercel.json)
+  fonts/           → Spectral y Hanken Grotesk, servidas desde el propio sitio (licencias OFL incluidas)
+  profesores/      → formulario original para profesores (actividad + alumnos → .zip de Word)
 ```
 
-## Antes de desplegar
+`index.html` lo sirve el Worker de Cloudflare desde el mismo origen que la API
+(ver [`../PARTICIPANTES.md`](../PARTICIPANTES.md)), así que no hay CORS ni URL de API que configurar.
+La política de seguridad no permite scripts ni estilos en línea: todo va en `script.js` y `style.css`.
 
-Abre `config.js` y reemplaza la URL de ejemplo por la URL real de tu
-backend ya desplegado en Render:
+## Verlo sin servidor
 
-```js
-const API_BASE_URL = "https://tu-servicio.onrender.com";
+```bash
+cd frontend
+python3 -m http.server 8000
+# http://localhost:8000/?demo         recorrido completo
+# http://localhost:8000/?demo=fila    servidor apagado: "tu enlace quedó en fila"
+# http://localhost:8000/?demo=error   fallo de lectura
 ```
 
-Si Render aún no está listo, puedes subir el frontend igual y editar
-este archivo (y volver a subirlo) cuando ya tengas la URL — no bloquea
-el resto del despliegue.
+## Formulario de profesores
 
-## Subir esta carpeta al mismo repositorio del backend
-
-Este `frontend/` puede vivir dentro del mismo repo donde ya subiste
-`app.py`, `Dockerfile`, etc. (no hace falta un repo aparte). Súbelo
-como una carpeta nueva ahí, junto a los archivos del backend.
-
-## Desplegar en Vercel
-
-1. En [vercel.com](https://vercel.com), "Add New" → "Project" → importa
-   el mismo repositorio de GitHub.
-2. En "Root Directory" (configuración del proyecto), selecciona la
-   carpeta **`frontend`** — esto le dice a Vercel que solo sirva esta
-   carpeta, ignorando el `Dockerfile`/`app.py` del backend.
-3. Framework Preset: "Other" (no hace falta build command, es HTML
-   estático).
-4. Deploy.
-
-Vercel te da una URL pública (algo como
-`transcript-anahuac.vercel.app`) — esa es la página que va a usar el
-profesor.
-
-## Nota sobre CORS
-
-El backend (FastAPI) todavía no tiene configurado CORS para aceptar
-peticiones desde el dominio de Vercel. Cuando tengas ambas URLs
-(Vercel y Render), hay que agregar el dominio de Vercel a la lista de
-orígenes permitidos en `app.py` del backend — si no, el navegador
-bloqueará la petición aunque el backend esté corriendo bien.
+Vive en `profesores/` con sus propios `config.js`, `script.js` y `style.css`, y usa el backend FastAPI
+(`POST /generate`). No se publica desde el Worker. Antes de usarlo, edita `profesores/config.js` con la URL de
+ese backend y despliégalo como siempre (por ejemplo, en Vercel con *Root Directory* = `frontend/profesores`).

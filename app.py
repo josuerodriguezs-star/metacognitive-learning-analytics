@@ -14,6 +14,7 @@ entregando en un .zip, sin persistirse en ningún lado.
 """
 
 import io
+import logging
 import os
 import re
 import time
@@ -34,21 +35,15 @@ from docx.shared import Pt, RGBColor
 
 from playwright.async_api import async_playwright
 
+# La lógica del navegador vive en extractor.py y se comparte con el
+# recolector de endurance (recolector.py).
+from extractor import USER_AGENT, limpiar_link, extraer_una_conversacion
+from seguridad import validar_enlace
+
 
 # ============================================================
 # Configuración / conexión a MongoDB
 # ============================================================
-
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-)
-
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-with open(os.path.join(_THIS_DIR, "extractor_v4_playwright.js"), "r", encoding="utf-8") as f:
-    EXTRACTOR_JS = f.read()
-
-COMBINED_SCRIPT = EXTRACTOR_JS + "\nreturn await window.__extractConversation();"
 
 _mongo_client = None
 
@@ -97,11 +92,6 @@ class ActividadRequest(BaseModel):
 # Utilidades
 # ============================================================
 
-def limpiar_link(link: str) -> str:
-    link = re.sub(r"[\u200b\u200c\u200d\ufeff]", "", link or "")
-    return link.strip()
-
-
 def extraer_resumen_adjuntos(resultado: dict) -> list:
     turns = resultado.get("turns", [])
     nombres_vistos = []
@@ -115,12 +105,6 @@ def extraer_resumen_adjuntos(resultado: dict) -> list:
             if nombre and nombre not in nombres_vistos:
                 nombres_vistos.append(nombre)
     return nombres_vistos
-
-
-async def extraer_una_conversacion(page, link: str) -> dict:
-    await page.goto(link, wait_until="networkidle", timeout=45000)
-    await page.wait_for_timeout(1500)
-    return await page.evaluate("async () => {\n" + COMBINED_SCRIPT + "\n}")
 
 
 def guardar_registro(coleccion, alumno: Alumno, req: ActividadRequest, resultado: dict = None, error: str = None):
@@ -302,19 +286,25 @@ def construir_docx(resultado: dict, alumno: Alumno, req: ActividadRequest) -> by
 
 app = FastAPI(title="Transcript Extractor Backend")
 
-# El frontend en Vercel llama a este backend desde otro dominio, así
-# que hay que permitirlo explícitamente. ALLOWED_ORIGIN se configura
-# como variable de entorno en Render una vez que tengas la URL de
-# Vercel (ej. "https://transcript-anahuac.vercel.app"). Mientras no
-# esté configurada, se permite cualquier origen para no bloquearte
-# durante las pruebas -- ajústalo antes de usarlo con datos reales.
-_allowed_origin = os.environ.get("ALLOWED_ORIGIN", "*")
+# El frontend vive en otro dominio (Vercel, subdominio de yohual.com),
+# así que hay que permitirlo explícitamente. ALLOWED_ORIGINS acepta
+# varios orígenes separados por coma, por ejemplo:
+#   https://recolector.yohual.com,https://yohual.com
+# (ALLOWED_ORIGIN, en singular, se sigue aceptando por compatibilidad.)
+# Mientras no esté configurada se permite cualquier origen, para no
+# bloquear las pruebas -- ajústalo antes de usarlo con datos reales.
+_origenes_env = os.environ.get("ALLOWED_ORIGINS") or os.environ.get("ALLOWED_ORIGIN", "*")
+_origenes = [o.strip() for o in _origenes_env.split(",") if o.strip()] or ["*"]
+if "*" in _origenes:
+    logging.getLogger("app").warning("CORS abierto a cualquier origen: define ALLOWED_ORIGINS.")
+    _origenes = ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[_allowed_origin] if _allowed_origin != "*" else ["*"],
+    allow_origins=_origenes,
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
 )
+
 
 
 @app.get("/health")
@@ -345,6 +335,13 @@ async def generate(req: ActividadRequest):
 
                 if not link:
                     guardar_registro(coleccion, alumno, req, error="Sin link")
+                    continue
+
+                # Solo se visitan enlaces de compartir permitidos: este
+                # endpoint es público y no debe abrir cualquier sitio.
+                link, _plataforma, error_enlace = validar_enlace(link)
+                if error_enlace:
+                    guardar_registro(coleccion, alumno, req, error=error_enlace)
                     continue
 
                 try:

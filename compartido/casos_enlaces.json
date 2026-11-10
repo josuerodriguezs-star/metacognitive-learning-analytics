@@ -1,0 +1,164 @@
+[
+ {
+  "entrada": "https://chatgpt.com/share/abc-123",
+  "enlace": "https://chatgpt.com/share/abc-123",
+  "plataforma": "ChatGPT",
+  "error": false
+ },
+ {
+  "entrada": "  https://chatgpt.com/share/abc-123?utm=1#x​ ",
+  "enlace": "https://chatgpt.com/share/abc-123",
+  "plataforma": "ChatGPT",
+  "error": false
+ },
+ {
+  "entrada": "https://chat.openai.com/share/abc-123",
+  "enlace": "https://chat.openai.com/share/abc-123",
+  "plataforma": "ChatGPT",
+  "error": false
+ },
+ {
+  "entrada": "https://chatgpt.com/share/abc-123/",
+  "enlace": "https://chatgpt.com/share/abc-123",
+  "plataforma": "ChatGPT",
+  "error": false
+ },
+ {
+  "entrada": "HTTPS://ChatGPT.com/share/ABC-123",
+  "enlace": "https://chatgpt.com/share/ABC-123",
+  "plataforma": "ChatGPT",
+  "error": false
+ },
+ {
+  "entrada": "https://chatgpt.com/share/68f3c2a1-9b7e-8001-a2d4-0e5f6a7b8c9d",
+  "enlace": "https://chatgpt.com/share/68f3c2a1-9b7e-8001-a2d4-0e5f6a7b8c9d",
+  "plataforma": "ChatGPT",
+  "error": false
+ },
+ {
+  "entrada": "https://evil.com/share/abc-123",
+  "enlace": null,
+  "plataforma": null,
+  "error": true
+ },
+ {
+  "entrada": "https://chatgpt.com.evil.com/share/abc-123",
+  "enlace": null,
+  "plataforma": null,
+  "error": true
+ },
+ {
+  "entrada": "https://chatgpt.com@evil.com/share/abc-123",
+  "enlace": null,
+  "plataforma": null,
+  "error": true
+ },
+ {
+  "entrada": "https://evil.com/?u=https://chatgpt.com/share/abc-123",
+  "enlace": null,
+  "plataforma": null,
+  "error": true
+ },
+ {
+  "entrada": "http://chatgpt.com/share/abc-123",
+  "enlace": null,
+  "plataforma": "ChatGPT",
+  "error": true
+ },
+ {
+  "entrada": "https://chatgpt.com:8443/share/abc-123",
+  "enlace": null,
+  "plataforma": "ChatGPT",
+  "error": true
+ },
+ {
+  "entrada": "https://user:pw@chatgpt.com/share/abc-123",
+  "enlace": null,
+  "plataforma": "ChatGPT",
+  "error": true
+ },
+ {
+  "entrada": "https://chatgpt.com/share/",
+  "enlace": null,
+  "plataforma": "ChatGPT",
+  "error": true
+ },
+ {
+  "entrada": "https://chatgpt.com/c/abc-123",
+  "enlace": null,
+  "plataforma": "ChatGPT",
+  "error": true
+ },
+ {
+  "entrada": "https://chatgpt.com/share/abc-123/otra",
+  "enlace": null,
+  "plataforma": "ChatGPT",
+  "error": true
+ },
+ {
+  "entrada": "https://chatgpt.com/share/a%20b",
+  "enlace": null,
+  "plataforma": "ChatGPT",
+  "error": true
+ },
+ {
+  "entrada": "https://chatgpt.com/share/..%2f..%2fetc",
+  "enlace": null,
+  "plataforma": "ChatGPT",
+  "error": true
+ },
+ {
+  "entrada": "file:///etc/passwd",
+  "enlace": null,
+  "plataforma": null,
+  "error": true
+ },
+ {
+  "entrada": "javascript:alert(1)",
+  "enlace": null,
+  "plataforma": null,
+  "error": true
+ },
+ {
+  "entrada": "http://169.254.169.254/latest/meta-data/",
+  "enlace": null,
+  "plataforma": null,
+  "error": true
+ },
+ {
+  "entrada": "https://localhost/share/abc-123",
+  "enlace": null,
+  "plataforma": null,
+  "error": true
+ },
+ {
+  "entrada": "https://[::1]/share/abc-123",
+  "enlace": null,
+  "plataforma": null,
+  "error": true
+ },
+ {
+  "entrada": "not a url",
+  "enlace": null,
+  "plataforma": null,
+  "error": true
+ },
+ {
+  "entrada": "",
+  "enlace": null,
+  "plataforma": null,
+  "error": true
+ },
+ {
+  "entrada": "https://claude.ai/share/abc-123",
+  "enlace": null,
+  "plataforma": "Claude",
+  "error": true
+ },
+ {
+  "entrada": "https://gemini.google.com/share/abc-123",
+  "enlace": null,
+  "plataforma": "Gemini",
+  "error": true
+ }
+]

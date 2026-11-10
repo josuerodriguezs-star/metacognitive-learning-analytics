@@ -3,102 +3,187 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Transcripción de conversaciones — Anáhuac Online</title>
+<title>Comparte una conversación — yohual</title>
+<meta name="description" content="Comparte una conversación con tu asistente de IA para investigar cómo se aprende conversando con una IA.">
+<meta name="color-scheme" content="dark">
+<link rel="preload" href="fonts/spectral-latin-300-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<div class="page">
+<canvas id="cielo" aria-hidden="true"></canvas>
+<p id="aviso-demo" class="aviso-demo" hidden>Modo demostración: no se envía ni se guarda nada. Cualquier código de 6 dígitos funciona.</p>
 
-  <header class="masthead">
-    <p class="masthead__kicker">Anáhuac Online</p>
-    <h1 class="masthead__title">Transcripción de conversaciones</h1>
-    <p class="masthead__lede">
-      Pega los links que tus alumnos compartieron de su conversación con el
-      agente de IA. Extraemos cada turno, guardamos el registro completo y
-      te entregamos un documento de Word por alumno, listo para revisar.
+<header class="barra">
+  <a class="marca" id="enlace-marca" href="https://yohual.com">yohual</a>
+  <a class="volver" id="enlace-inicio" href="https://yohual.com">Volver al inicio</a>
+</header>
+
+<main class="escenario" id="escenario">
+
+  <!-- 1. Correo -->
+  <section class="paso" data-paso="correo" aria-labelledby="t-correo">
+    <h1 class="titulo" id="t-correo" tabindex="-1">Comparte una conversación con tu asistente de IA</h1>
+    <p class="texto">
+      Estudiamos cómo las personas planean, revisan y ajustan lo que aprenden cuando
+      conversan con una IA. Tu conversación ayuda a entenderlo y a mejorar el
+      acompañamiento en línea.
     </p>
-  </header>
-
-  <form id="form-actividad" novalidate>
-
-    <section class="block">
-      <h2 class="block__title">Datos de la actividad</h2>
-
-      <div class="field-grid">
-        <label class="field">
-          <span class="field__label">Curso</span>
-          <input type="text" name="curso" required placeholder="Diseño y desarrollo de productos">
-        </label>
-
-        <label class="field">
-          <span class="field__label">Clave de materia</span>
-          <input type="text" name="clave_materia" required placeholder="ING3702">
-        </label>
-
-        <label class="field">
-          <span class="field__label">Programa</span>
-          <input type="text" name="programa" required placeholder="Ingeniería Industrial">
-        </label>
-
-        <label class="field">
-          <span class="field__label">Arranque / sección</span>
-          <input type="text" name="arranque" required placeholder="20081 (A43)">
-        </label>
-
-        <label class="field">
-          <span class="field__label">Número de actividad</span>
-          <input type="text" name="actividad_numero" required placeholder="Actividad 2">
-        </label>
-
-        <label class="field">
-          <span class="field__label">Fecha límite</span>
-          <input type="text" name="fecha_limite" required placeholder="26 de abril de 2026">
-        </label>
-
-        <label class="field field--wide">
-          <span class="field__label">Nombre de la actividad</span>
-          <input type="text" name="actividad_nombre" required placeholder="De la detección de necesidades al diseño del sistema de producto">
-        </label>
+    <form class="formulario" id="form-correo" novalidate>
+      <label class="campo" for="in-correo">Correo electrónico</label>
+      <input class="entrada" id="in-correo" name="email" type="email" inputmode="email"
+             autocomplete="email" placeholder="nombre@correo.com" required>
+      <p class="ayuda">Lo usamos solo para verificar tu acceso.</p>
+      <p class="error" id="err-correo" role="alert" hidden></p>
+      <div class="acciones">
+        <button class="boton" type="submit">Enviar código</button>
       </div>
-    </section>
-
-    <section class="block">
-      <div class="block__header-row">
-        <h2 class="block__title">Alumnos</h2>
-        <button type="button" id="btn-agregar-alumno" class="btn btn--ghost">Agregar alumno</button>
-      </div>
-
-      <div id="tabla-alumnos" class="roster">
-        <div class="roster__head">
-          <span>Nombre</span>
-          <span>Link de la conversación</span>
-          <span>Fecha de envío</span>
-          <span aria-hidden="true"></span>
-        </div>
-        <div id="filas-alumnos"></div>
-      </div>
-    </section>
-
-    <div class="submit-row">
-      <button type="submit" id="btn-generar" class="btn btn--primary">Generar transcripts</button>
-      <p id="mensaje-error" class="mensaje-error" hidden></p>
-    </div>
-
-  </form>
-
-  <section id="pantalla-espera" class="espera" hidden>
-    <div class="espera__marca" aria-hidden="true"></div>
-    <h2 class="espera__titulo">Procesando conversaciones…</h2>
-    <p class="espera__texto">
-      Estamos visitando cada link y extrayendo la conversación turno por
-      turno. Con un grupo completo esto puede tardar varios minutos —
-      preferimos hacerlo con cuidado a que se pierda algo.
-    </p>
-    <p class="espera__contador" id="espera-contador"></p>
+    </form>
   </section>
 
-</div>
+  <!-- 2. Código -->
+  <section class="paso" data-paso="codigo" aria-labelledby="t-codigo" hidden>
+    <h1 class="titulo" id="t-codigo" tabindex="-1">Revisa tu correo</h1>
+    <p class="texto">
+      Enviamos un código de 6 dígitos a <strong id="correo-destino"></strong>.
+      Vence en 10 minutos.
+    </p>
+    <form class="formulario" id="form-codigo" novalidate>
+      <label class="campo" for="in-codigo">Código</label>
+      <input class="entrada entrada--codigo" id="in-codigo" name="codigo" type="text"
+             inputmode="numeric" autocomplete="one-time-code" maxlength="7"
+             placeholder="000000" required>
+      <p class="error" id="err-codigo" role="alert" hidden></p>
+      <div class="acciones">
+        <button class="boton" type="submit">Verificar</button>
+        <button class="enlace-boton" type="button" id="btn-reenviar">Reenviar código</button>
+        <button class="enlace-boton" type="button" id="btn-cambiar-correo">Cambiar correo</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- 3. Consentimiento -->
+  <section class="paso" data-paso="consentimiento" data-version="2026-11-v2"
+           aria-labelledby="t-consentimiento" hidden>
+    <h1 class="titulo" id="t-consentimiento" tabindex="-1">Qué haremos con tu conversación</h1>
+    <dl class="consentimiento">
+      <div>
+        <dt>Qué recibimos</dt>
+        <dd>
+          El texto de una conversación que tú compartes con un enlace. Nada más de tu cuenta.
+          El enlace debe seguir activo hasta que la leamos, y a veces tarda unos días.
+        </dd>
+      </div>
+      <div>
+        <dt>Cómo la cuidamos</dt>
+        <dd>
+          Quitamos los correos y teléfonos que detectemos. Tu correo se guarda aparte, en Cloudflare,
+          solo para verificar tu acceso y avisarte. El texto de la conversación se guarda en un servidor
+          propio de yohual, sin conexión directa desde internet, y borramos el enlace de nuestra fila
+          en cuanto lo leemos. No podemos quitar los nombres u otros datos que escribas dentro de la
+          conversación: revísala antes de compartirla.
+        </dd>
+      </div>
+      <div>
+        <dt>Para qué la usamos</dt>
+        <dd>
+          Para investigar cómo se autorregula el aprendizaje al conversar con una IA y mejorar
+          herramientas de acompañamiento. Los resultados se reportan sin identificarte.
+        </dd>
+      </div>
+      <div>
+        <dt>Tu decisión</dt>
+        <dd>
+          Participar es voluntario. Si luego quieres que borremos tu conversación,
+          escribe a <a id="enlace-contacto" href="mailto:contacto@yohual.com">contacto@yohual.com</a>.
+        </dd>
+      </div>
+    </dl>
+    <form class="formulario" id="form-consentimiento" novalidate>
+      <label class="casilla">
+        <input type="checkbox" id="in-acepto">
+        <span>Leí lo anterior y acepto participar.</span>
+      </label>
+      <p class="error" id="err-consentimiento" role="alert" hidden></p>
+      <div class="acciones">
+        <button class="boton" type="submit" id="btn-acepto" disabled>Acepto y continuar</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- 4. Enlace -->
+  <section class="paso" data-paso="enlace" aria-labelledby="t-enlace" hidden>
+    <h1 class="titulo" id="t-enlace" tabindex="-1">Pega el enlace de tu conversación</h1>
+    <ol class="instrucciones">
+      <li>En ChatGPT, abre la conversación que quieres compartir.</li>
+      <li>Pulsa Compartir y luego Crear enlace.</li>
+      <li>Copia el enlace y pégalo aquí.</li>
+    </ol>
+    <form class="formulario" id="form-enlace" novalidate>
+      <label class="campo" for="in-enlace">Enlace de la conversación</label>
+      <input class="entrada" id="in-enlace" name="enlace" type="url" inputmode="url"
+             autocomplete="off" spellcheck="false" placeholder="https://chatgpt.com/share/…" required>
+      <p class="ayuda" id="ayuda-enlace">Por ahora recibimos enlaces de ChatGPT. Claude y Gemini llegarán pronto.</p>
+      <p class="ayuda">Mantén activo el enlace hasta que te avisemos que lo leímos.</p>
+      <p class="error" id="err-enlace" role="alert" hidden></p>
+      <div class="acciones">
+        <button class="boton" type="submit">Leer conversación</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- 5. Extracción -->
+  <section class="paso paso--ancho" data-paso="extraccion" aria-labelledby="t-extraccion" hidden>
+    <h1 class="titulo titulo--medio" id="t-extraccion" tabindex="-1">Leyendo tu conversación</h1>
+    <div class="sitio" id="sitio-trayectoria-extraccion"></div>
+    <p class="estado" id="estado-fase" role="status" aria-live="polite"></p>
+    <div class="acciones" id="acciones-error" hidden>
+      <p class="error" id="err-extraccion"></p>
+      <button class="boton" type="button" id="btn-otro-enlace">Probar con otro enlace</button>
+    </div>
+  </section>
+
+  <!-- 6. Gracias -->
+  <section class="paso paso--ancho" data-paso="gracias" aria-labelledby="t-gracias" hidden>
+    <h1 class="titulo titulo--medio" id="t-gracias" tabindex="-1">Gracias por compartir tu conversación</h1>
+    <div class="sitio" id="sitio-trayectoria-gracias"></div>
+    <p class="texto" id="resumen-gracias"></p>
+
+    <h2 class="subtitulo">Mientras estás aquí</h2>
+    <ul class="servicios" id="lista-servicios"></ul>
+
+    <div class="acciones">
+      <a class="boton" id="btn-inicio" href="https://yohual.com">Volver al inicio</a>
+      <button class="enlace-boton" type="button" id="btn-otra">Compartir otra conversación</button>
+    </div>
+  </section>
+
+  <!-- Trayectoria: se mueve entre las pantallas 5 y 6 -->
+  <figure class="trayectoria" id="trayectoria" hidden>
+    <svg id="svg-trayectoria" viewBox="0 0 720 220" role="img"
+         aria-label="Los turnos de tu conversación, uno tras otro">
+      <path id="camino-base" class="camino" d="M 36 110 C 130 40, 210 40, 290 110 S 450 180, 530 110 S 640 50, 684 110"/>
+      <path id="camino-trazo" class="camino camino--trazo" d="M 36 110 C 130 40, 210 40, 290 110 S 450 180, 530 110 S 640 50, 684 110"/>
+      <circle id="pulso" class="pulso" r="4" cx="36" cy="110" hidden/>
+      <g id="estrellas"></g>
+    </svg>
+    <figcaption class="leyenda" id="leyenda" hidden>
+      <span class="leyenda__item"><i class="punto punto--persona"></i>Tú</span>
+      <span class="leyenda__item"><i class="punto punto--asistente"></i>Asistente</span>
+    </figcaption>
+  </figure>
+
+</main>
+
+<nav class="trayecto" aria-label="Progreso">
+  <ol id="progreso">
+    <li data-nodo="correo"><span class="nodo"></span><span class="nodo-texto">Correo</span></li>
+    <li data-nodo="codigo"><span class="nodo"></span><span class="nodo-texto">Código</span></li>
+    <li data-nodo="consentimiento"><span class="nodo"></span><span class="nodo-texto">Consentimiento</span></li>
+    <li data-nodo="enlace"><span class="nodo"></span><span class="nodo-texto">Conversación</span></li>
+    <li data-nodo="gracias"><span class="nodo"></span><span class="nodo-texto">Listo</span></li>
+  </ol>
+</nav>
 
 <script src="config.js"></script>
 <script src="script.js"></script>

@@ -1,0 +1,33 @@
+name = "yohual-conversaciones"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# Solo se publica en el subdominio propio: sin *.workers.dev ni URLs de vista previa.
+workers_dev = false
+preview_urls = false
+routes = [{ pattern = "conversaciones.yohual.com", custom_domain = true }]
+
+# La interfaz (carpeta ../frontend) se sirve desde el mismo Worker, así que
+# la página y la API comparten origen y no hace falta CORS.
+[assets]
+directory = "../frontend"
+binding = "ASSETS"
+run_worker_first = ["/api/*", "/interno/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "yohual-conversaciones"
+database_id = "REEMPLAZA-CON-EL-ID-QUE-DEVUELVE-wrangler-d1-create"
+
+# Limpieza diaria de códigos, límites y trabajos viejos.
+[triggers]
+crons = ["17 9 * * *"]
+
+[vars]
+VERSION_CONSENTIMIENTO = "2026-11-v2"
+PUBLIC_URL = "https://conversaciones.yohual.com"
+MAIL_FROM = "yohual <acceso@yohual.com>"
+ENLACES_PERMITIDOS = "chatgpt.com,chat.openai.com"
+
+# Secretos (no van aquí; se cargan con `npx wrangler secret put`):
+#   APP_SECRET, PULLER_TOKEN, RESEND_API_KEY
