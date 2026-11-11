@@ -3,7 +3,9 @@ Recolector de endurance.
 
 Jala desde Cloudflare los enlaces de conversaciones que esperan en la fila,
 los lee con el extractor (Playwright), quita correos y teléfonos y guarda el
-resultado en la MongoDB local. Solo hace conexiones DE SALIDA (hacia el Worker
+resultado en la MongoDB local. También recoge los envíos de otros sitios (por
+ejemplo la encuesta del simulador), los guarda en la colección envios_<servicio>
+y avisa al Worker para que borre su copia en la nube. Solo hace conexiones DE SALIDA (hacia el Worker
 y hacia chatgpt.com): endurance no necesita ningún puerto abierto.
 
 Uso:
@@ -24,6 +26,7 @@ import argparse
 import asyncio
 import logging
 import os
+import re
 import signal
 import sys
 from datetime import datetime, timezone
@@ -78,6 +81,12 @@ class ClienteWorker:
                         error: Optional[str] = None) -> None:
         await self._post("/interno/resultado", {"id": job_id, "ok": ok, "turnos": turnos or [], "error": error})
 
+    async def envios_pendientes(self, maximo: int = 5) -> List[dict]:
+        return (await self._post("/interno/envios/pendientes", {"max": maximo}))["envios"]
+
+    async def envio_resultado(self, envio_id: str, ok: bool, error: Optional[str] = None) -> None:
+        await self._post("/interno/envios/resultado", {"id": envio_id, "ok": ok, "error": error})
+
     async def apagado(self) -> None:
         await self._post("/interno/apagado", {})
 
@@ -93,13 +102,24 @@ class BodegaMongo:
     def __init__(self, uri: str, base: str = "transcripts", coleccion: str = "conversaciones_participantes"):
         from pymongo import MongoClient
 
-        self._col = MongoClient(uri, serverSelectionTimeoutMS=10000)[base][coleccion]
+        self._db = MongoClient(uri, serverSelectionTimeoutMS=10000)[base]
+        self._col = self._db[coleccion]
         self._col.create_index("job_id", unique=True)
+        self._envios_listos = set()
 
     def guardar(self, documento: dict) -> None:
         # Se reemplaza por job_id: si un resultado no llegó al Worker y el
         # trabajo se repite, no queda duplicado.
         self._col.replace_one({"job_id": documento["job_id"]}, documento, upsert=True)
+
+    def guardar_envio(self, servicio: str, documento: dict) -> None:
+        # Una colección por servicio. Se reemplaza por envio_id: si el aviso al
+        # Worker se pierde y el envío se repite, no queda duplicado.
+        col = self._db[f"envios_{servicio}"]
+        if servicio not in self._envios_listos:
+            col.create_index("envio_id", unique=True)
+            self._envios_listos.add(servicio)
+        col.replace_one({"envio_id": documento["envio_id"]}, documento, upsert=True)
 
 
 # ============================================================
@@ -107,6 +127,34 @@ class BodegaMongo:
 # ============================================================
 
 Extraer = Callable[[str, Optional[Callable[[str], Awaitable[None]]]], Awaitable[dict]]
+
+
+def _evaluar_calidad(resultado: dict) -> dict:
+    """Marca lecturas que probablemente salieron incompletas, para revisarlas
+    en lugar de darlas por buenas. No cambia lo que ve la persona."""
+    turnos = resultado.get("turns", []) if isinstance(resultado, dict) else []
+    usuario = sum(1 for t in turnos if t.get("role") == "user")
+    asistente = sum(1 for t in turnos if t.get("role") == "assistant")
+    reporte = resultado.get("quality_report", {}) if isinstance(resultado, dict) else {}
+
+    motivos = []
+    if usuario >= 3 and asistente == 0:
+        motivos.append("sin_respuestas_del_asistente")
+    if usuario == 0 and asistente > 0:
+        motivos.append("sin_turnos_de_la_persona")
+    if reporte.get("count_by_role", {}).get("unknown"):
+        motivos.append("turnos_con_rol_desconocido")
+    if reporte.get("extraction_method") == "main-fallback":
+        motivos.append("sin_contenedores_de_mensajes")
+    if reporte.get("empty_clean_turns"):
+        motivos.append("turnos_sin_texto")
+    return {
+        "dudosa": bool(motivos),
+        "motivos": motivos,
+        "metodo": reporte.get("extraction_method"),
+        "turnos_persona": usuario,
+        "turnos_asistente": asistente,
+    }
 
 
 def _iso(ts) -> str:
@@ -160,6 +208,11 @@ class Recolector:
             await self.api.resultado(job_id, False, error=MSG_INTERNO)
             return
 
+        calidad = _evaluar_calidad(anonimo)
+        if calidad["dudosa"]:
+            # Sin contenido ni enlaces en el log: solo el aviso de que conviene revisarla.
+            log.warning("Trabajo %s: lectura dudosa (%s).", job_id, ", ".join(calidad["motivos"]))
+
         await self._avisar_fase(job_id, "guardando")
         documento = {
             "job_id": job_id,
@@ -170,6 +223,7 @@ class Recolector:
             "recibido_en": _iso(trabajo.get("creado_ts")),
             "procesado_en": datetime.now(timezone.utc).isoformat(),
             "total_turnos": len(roles),
+            "calidad": calidad,
             "resultado_completo": anonimo,
         }
         try:
@@ -184,8 +238,45 @@ class Recolector:
         log.info("Trabajo %s listo (%d turnos).", job_id, len(roles))
 
 
+    async def procesar_envio(self, envio: dict) -> None:
+        """Guarda un envío (p. ej. una encuesta) sin interpretar su contenido,
+        solo quitando correos y teléfonos de los textos."""
+        envio_id = envio.get("id")
+        servicio = envio.get("servicio")
+        if not isinstance(envio_id, str) or not isinstance(servicio, str) or not RE_SERVICIO.match(servicio):
+            if isinstance(envio_id, str):
+                await self.api.envio_resultado(envio_id, False, error="Envío con formato no válido.")
+            return
+        if not isinstance(envio.get("carga"), dict):
+            await self.api.envio_resultado(envio_id, False, error="El envío llegó sin contenido legible.")
+            return
+
+        documento = {
+            "envio_id": envio_id,
+            "participante_id": envio.get("participante_id"),
+            "servicio": servicio,
+            "tipo": envio.get("tipo"),
+            "version_consentimiento": envio.get("version_consentimiento", ""),
+            "recibido_en": _iso(envio.get("creado_ts")),
+            "procesado_en": datetime.now(timezone.utc).isoformat(),
+            "carga": seguridad._limpiar_recursivo(envio["carga"]),
+        }
+        try:
+            await asyncio.to_thread(self.bodega.guardar_envio, servicio, documento)
+        except Exception as e:
+            # Sigue en la nube (vuelve a la fila al vencer su reserva): no se pierde.
+            log.error("No se pudo guardar el envío %s en MongoDB: %s", envio_id, type(e).__name__)
+            raise ErrorDeAlmacenamiento() from e
+
+        await self.api.envio_resultado(envio_id, True)
+        log.info("Envío %s (%s) guardado.", envio_id, servicio)
+
+
 class ErrorDeAlmacenamiento(Exception):
     pass
+
+
+RE_SERVICIO = re.compile(r"^[a-z]{1,32}$")
 
 
 # ============================================================
@@ -228,10 +319,32 @@ async def ejecutar(recolector: Recolector, una_vez: bool, intervalo: float, dete
                 espera_error = min(espera_error * 2, 300)
                 continue
 
-            if not trabajos:
+            envios = []
+            try:
+                envios = await recolector.api.envios_pendientes(5)
+            except Exception as e:
+                log.warning("No se pudo consultar la fila de envíos (%s).", type(e).__name__)
                 if una_vez:
+                    codigo = 1
+
+            for envio in envios:
+                try:
+                    await recolector.procesar_envio(envio)
+                except ErrorDeAlmacenamiento:
+                    if una_vez:
+                        return 1
+                    await _esperar(detener, 60)
                     break
-                await _esperar(detener, intervalo)
+                except Exception as e:
+                    log.error("Fallo al procesar el envío %s: %s", envio.get("id"), type(e).__name__)
+                    if una_vez:
+                        codigo = 1
+
+            if not trabajos:
+                if una_vez and not envios:
+                    break
+                if not envios:
+                    await _esperar(detener, intervalo)
                 continue
 
             for trabajo in trabajos:

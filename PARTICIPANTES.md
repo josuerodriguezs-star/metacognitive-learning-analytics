@@ -106,3 +106,22 @@ servidor estático (`python3 -m http.server` dentro de `frontend/`).
 - **Sin endpoint de borrado.** El borrado que ofrece el consentimiento se hace a mano por `participante_id`.
 - **Lectura sin supervisión.** El extractor depende de la estructura de la página de ChatGPT; si cambia,
   las lecturas fallarán con un mensaje claro a la persona y quedarán en el log de endurance.
+
+## Acceso compartido entre sitios (conversaciones, calendario y simulador)
+
+Una sola cuenta por correo para todos los sitios de yohual.com:
+
+- **Registro único.** La persona verifica su correo una vez; el Worker deja la cookie `yh_sesion`
+  (`Domain=.yohual.com`, `HttpOnly`, `Secure`, `SameSite=Lax`) y los demás sitios la usan llamando a
+  `https://acceso.yohual.com/api/...` con `credentials: "include"`.
+- **Consentimiento por servicio.** Cada servicio tiene su propio texto y versión (`CONSENTIMIENTOS`);
+  aceptar uno no habilita los otros.
+- **CORS.** Solo los orígenes de `ORIGENES_PERMITIDOS`. Las escrituras con cookie exigen cabecera `Origin`.
+- **Envíos** (`POST /api/envios`, p. ej. la encuesta del simulador): esperan en D1 solo hasta que endurance
+  los recoge; entonces se guardan en Mongo (`envios_<servicio>`) y la carga se borra de la nube.
+  Si endurance está apagada, los envíos esperan hasta 60 días.
+- **Suscripciones** (`GET/PUT /api/suscripciones/calendario`): las claves de eventos que la persona quiere
+  seguir. Viven en D1 (no en endurance) para que las alertas puedan salir aunque endurance esté apagada.
+
+Al actualizar: `npx wrangler d1 execute yohual-conversaciones --remote --file=schema.sql`,
+`npx wrangler deploy`, y reconstruir el contenedor del recolector.

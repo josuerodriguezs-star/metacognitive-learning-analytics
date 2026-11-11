@@ -57,3 +57,51 @@ CREATE TABLE IF NOT EXISTS meta (
   clave TEXT PRIMARY KEY,
   valor TEXT NOT NULL
 );
+
+-- ---------------------------------------------------------------------------
+-- Acceso compartido (conversaciones, calendario y simulador)
+-- ---------------------------------------------------------------------------
+
+-- Consentimiento por servicio y versión.
+CREATE TABLE IF NOT EXISTS consentimientos (
+  participante_id TEXT NOT NULL,
+  servicio        TEXT NOT NULL,
+  version         TEXT NOT NULL,
+  ts              INTEGER NOT NULL,
+  PRIMARY KEY (participante_id, servicio)
+);
+-- Quien ya había aceptado el de conversaciones antes de esta tabla conserva su aceptación.
+INSERT OR IGNORE INTO consentimientos (participante_id, servicio, version, ts)
+  SELECT id, 'conversaciones', consentimiento_version, COALESCE(consentimiento_ts, creado_ts)
+  FROM participantes WHERE consentimiento_version IS NOT NULL;
+
+-- Envíos (p. ej. la encuesta del simulador): esperan aquí solo hasta que endurance los recoge;
+-- entonces la carga se borra.
+CREATE TABLE IF NOT EXISTS envios (
+  id                     TEXT PRIMARY KEY,
+  participante_id        TEXT NOT NULL,
+  servicio               TEXT NOT NULL,
+  tipo                   TEXT NOT NULL,
+  carga                  TEXT,                        -- JSON; se pone en NULL al terminar
+  id_cliente             TEXT,                        -- para que un reintento no duplique el envío
+  version_consentimiento TEXT NOT NULL,
+  estado                 TEXT NOT NULL DEFAULT 'en_cola',  -- en_cola | tomado | listo | error
+  error                  TEXT,
+  creado_ts              INTEGER NOT NULL,
+  tomado_ts              INTEGER,
+  terminado_ts           INTEGER
+);
+CREATE INDEX IF NOT EXISTS ix_envios_estado ON envios (estado, creado_ts);
+CREATE INDEX IF NOT EXISTS ix_envios_persona ON envios (participante_id, servicio, creado_ts);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_envio_cliente
+  ON envios (participante_id, servicio, id_cliente) WHERE id_cliente IS NOT NULL;
+
+-- Lo que cada persona quiere seguir (p. ej. premios del calendario). Vive aquí, y no en
+-- endurance, porque las alertas deben poder salir aunque endurance esté apagada.
+CREATE TABLE IF NOT EXISTS suscripciones (
+  participante_id TEXT NOT NULL,
+  servicio        TEXT NOT NULL,
+  clave           TEXT NOT NULL,
+  creado_ts       INTEGER NOT NULL,
+  PRIMARY KEY (participante_id, servicio, clave)
+);

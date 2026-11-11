@@ -408,3 +408,168 @@ test("la limpieza descarta enlaces viejos sin leer y borra su enlace", async () 
   assert.equal(fila.enlace, null);
   assert.equal(env.DB._db.prepare("SELECT COUNT(*) AS n FROM codigos").get().n, 0);
 });
+
+// ------------------------------------------------------------------
+// Acceso compartido: cookie, CORS, consentimiento por servicio, envíos y suscripciones
+// ------------------------------------------------------------------
+
+const CAL = "https://calendario.test";
+
+function conSitios() {
+  env.ORIGENES_PERMITIDOS = `${CAL},https://simulador.test`;
+  env.COOKIE_DOMINIO = ".yohual.test";
+  env.CONSENTIMIENTOS = JSON.stringify({ calendario: "cal-v1", simulador: "sim-v1" });
+}
+
+async function sesionConCookie() {
+  conSitios();
+  await llamar("POST", "/api/registro", { cuerpo: { email: CORREO } });
+  const r = await llamar("POST", "/api/verificar", { cuerpo: { email: CORREO, codigo: ultimoCodigo() } });
+  const cookie = r.cabeceras.get("set-cookie");
+  return { token: r.datos.token, cookie, par: cookie.split(";")[0] };
+}
+
+test("verificar entrega una cookie de sesión compartida y segura", async () => {
+  const { cookie } = await sesionConCookie();
+  assert.match(cookie, /^yh_sesion=/);
+  for (const a of ["HttpOnly", "Secure", "SameSite=Lax", "Domain=.yohual.test", "Path=/"]) assert.ok(cookie.includes(a), a);
+});
+
+test("la cookie autentica y /api/salir la borra", async () => {
+  const { par } = await sesionConCookie();
+  const h = { cookie: par, origin: CAL };
+  const s = await llamar("GET", "/api/sesion?servicio=calendario", { cabeceras: h });
+  assert.equal(s.estado, 200);
+  assert.equal(s.datos.email, CORREO);
+  assert.equal(s.datos.servicio, "calendario");
+  assert.equal(s.datos.consentimiento, false);
+  const o = await llamar("POST", "/api/salir", { cuerpo: {}, cabeceras: h });
+  assert.equal(o.estado, 200);
+  assert.match(o.cabeceras.get("set-cookie"), /Max-Age=0/);
+});
+
+test("escrituras con cookie sin Origin se rechazan (CSRF)", async () => {
+  const { par } = await sesionConCookie();
+  const r = await llamar("POST", "/api/consentimiento", { cuerpo: { version: "cal-v1", servicio: "calendario" }, cabeceras: { cookie: par } });
+  assert.equal(r.estado, 403);
+});
+
+test("origen desconocido se rechaza; el permitido recibe CORS con credenciales", async () => {
+  const { par } = await sesionConCookie();
+  const malo = await llamar("GET", "/api/sesion", { cabeceras: { cookie: par, origin: "https://malo.example" } });
+  assert.equal(malo.estado, 403);
+  const bueno = await llamar("GET", "/api/sesion", { cabeceras: { cookie: par, origin: CAL } });
+  assert.equal(bueno.cabeceras.get("access-control-allow-origin"), CAL);
+  assert.equal(bueno.cabeceras.get("access-control-allow-credentials"), "true");
+});
+
+test("preflight: responde al origen permitido y niega al resto", async () => {
+  conSitios();
+  const ok = await llamar("OPTIONS", "/api/envios", { cabeceras: { origin: CAL } });
+  assert.equal(ok.estado, 204);
+  assert.equal(ok.cabeceras.get("access-control-allow-origin"), CAL);
+  const no = await llamar("OPTIONS", "/api/envios", { cabeceras: { origin: "https://malo.example" } });
+  assert.equal(no.estado, 403);
+});
+
+test("el host solo-API no sirve la página", async () => {
+  env.HOST_SOLO_API = "acceso.yohual.test";
+  const r = await worker.fetch(new Request("https://acceso.yohual.test/"), env, { waitUntil() {} });
+  assert.equal(r.status, 404);
+});
+
+test("el consentimiento es por servicio: aceptar uno no habilita otro", async () => {
+  const { token } = await sesionConCookie();
+  const c = await llamar("POST", "/api/consentimiento", { cuerpo: { version: "cal-v1", servicio: "calendario" }, token });
+  assert.equal(c.estado, 200);
+  const sc = await llamar("GET", "/api/sesion?servicio=calendario", { token });
+  const ss = await llamar("GET", "/api/sesion?servicio=simulador", { token });
+  assert.equal(sc.datos.consentimiento, true);
+  assert.equal(ss.datos.consentimiento, false);
+  const e = await llamar("POST", "/api/envios", { token, cuerpo: { servicio: "simulador", tipo: "encuesta", carga: { a: 1 } } });
+  assert.equal(e.estado, 403);
+});
+
+test("una versión de consentimiento equivocada se rechaza", async () => {
+  const { token } = await sesionConCookie();
+  const c = await llamar("POST", "/api/consentimiento", { cuerpo: { version: "vieja", servicio: "simulador" }, token });
+  assert.ok(c.estado >= 400 && c.estado < 500);
+});
+
+async function aceptarServicio(token, servicio, version) {
+  const c = await llamar("POST", "/api/consentimiento", { cuerpo: { version, servicio }, token });
+  assert.equal(c.estado, 200);
+}
+
+test("envíos: se encolan, endurance los recoge y al terminar la carga se borra", async () => {
+  const { token } = await sesionConCookie();
+  await aceptarServicio(token, "simulador", "sim-v1");
+  const e = await llamar("POST", "/api/envios", { token, cuerpo: { servicio: "simulador", tipo: "encuesta", carga: { p1: "x", p2: [1, 2] }, id_cliente: "abc12345" } });
+  assert.equal(e.estado, 201);
+  const otra = await llamar("POST", "/api/envios", { token, cuerpo: { servicio: "simulador", tipo: "encuesta", carga: { p1: "x" }, id_cliente: "abc12345" } });
+  assert.equal(otra.datos.repetido, true);
+  assert.equal(otra.datos.id, e.datos.id);
+
+  const sin = await llamar("POST", "/interno/envios/pendientes", { cuerpo: { max: 5 } });
+  assert.equal(sin.estado, 401);
+
+  const p = await interno("/interno/envios/pendientes", { max: 5 });
+  assert.equal(p.datos.envios.length, 1);
+  assert.deepEqual(p.datos.envios[0].carga, { p1: "x", p2: [1, 2] });
+  assert.equal(p.datos.envios[0].servicio, "simulador");
+  assert.equal(p.datos.envios[0].version_consentimiento, "sim-v1");
+  assert.equal((await interno("/interno/envios/pendientes", { max: 5 })).datos.envios.length, 0);
+
+  await interno("/interno/envios/resultado", { id: e.datos.id, ok: true });
+  const fila = env.DB._db.prepare("SELECT estado, carga FROM envios WHERE id = ?").get(e.datos.id);
+  assert.equal(fila.estado, "listo");
+  assert.equal(fila.carga, null);
+});
+
+test("envíos: validaciones de tipo, tamaño y servicio", async () => {
+  const { token } = await sesionConCookie();
+  await aceptarServicio(token, "simulador", "sim-v1");
+  const mal = (cuerpo) => llamar("POST", "/api/envios", { token, cuerpo });
+  assert.equal((await mal({ servicio: "calendario", tipo: "encuesta", carga: {} })).estado, 400);
+  assert.equal((await mal({ servicio: "simulador", tipo: "otro", carga: {} })).estado, 400);
+  assert.equal((await mal({ servicio: "simulador", tipo: "encuesta", carga: [1] })).estado, 400);
+  assert.equal((await mal({ servicio: "simulador", tipo: "encuesta", carga: { x: "y".repeat(40000) } })).estado, 413);
+});
+
+test("envíos: un envío vencido en la fila se reintenta si endurance no respondió", async () => {
+  const { token } = await sesionConCookie();
+  await aceptarServicio(token, "simulador", "sim-v1");
+  const e = await llamar("POST", "/api/envios", { token, cuerpo: { servicio: "simulador", tipo: "encuesta", carga: { a: 1 } } });
+  await interno("/interno/envios/pendientes", { max: 1 });
+  env.DB._db.prepare("UPDATE envios SET tomado_ts = tomado_ts - 3600 WHERE id = ?").run(e.datos.id);
+  const otra = await interno("/interno/envios/pendientes", { max: 1 });
+  assert.equal(otra.datos.envios.length, 1);
+});
+
+test("suscripciones: reemplazan la lista, exigen consentimiento y solo existen para el calendario", async () => {
+  const { token } = await sesionConCookie();
+  const sin = await llamar("PUT", "/api/suscripciones/calendario", { token, cuerpo: { claves: ["premio-a"] } });
+  assert.equal(sin.estado, 403);
+  await aceptarServicio(token, "calendario", "cal-v1");
+  let r = await llamar("PUT", "/api/suscripciones/calendario", { token, cuerpo: { claves: ["premio-a", "premio-b", "premio-a"] } });
+  assert.deepEqual(r.datos.claves, ["premio-a", "premio-b"]);
+  r = await llamar("PUT", "/api/suscripciones/calendario", { token, cuerpo: { claves: ["premio-b", "premio-c"] } });
+  assert.deepEqual(r.datos.claves, ["premio-b", "premio-c"]);
+  r = await llamar("GET", "/api/suscripciones/calendario", { token });
+  assert.deepEqual(r.datos.claves, ["premio-b", "premio-c"]);
+  r = await llamar("PUT", "/api/suscripciones/calendario", { token, cuerpo: { claves: [] } });
+  assert.deepEqual(r.datos.claves, []);
+  assert.equal((await llamar("PUT", "/api/suscripciones/calendario", { token, cuerpo: { claves: ["Mal Formato!"] } })).estado, 400);
+  assert.equal((await llamar("GET", "/api/suscripciones/simulador", { token })).estado, 404);
+});
+
+test("limpiar: los envíos pendientes muy viejos se descartan sin conservar la carga", async () => {
+  const { token } = await sesionConCookie();
+  await aceptarServicio(token, "simulador", "sim-v1");
+  const e = await llamar("POST", "/api/envios", { token, cuerpo: { servicio: "simulador", tipo: "encuesta", carga: { a: 1 } } });
+  env.DB._db.prepare("UPDATE envios SET creado_ts = creado_ts - ? WHERE id = ?").run(61 * 86400, e.datos.id);
+  await limpiar(env);
+  const fila = env.DB._db.prepare("SELECT estado, carga FROM envios WHERE id = ?").get(e.datos.id);
+  assert.equal(fila.estado, "error");
+  assert.equal(fila.carga, null);
+});

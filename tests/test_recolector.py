@@ -31,6 +31,8 @@ class ApiFalsa:
         self.latidos = 0
         self.apagados = 0
         self.falla_pendientes = False
+        self.envios = []
+        self.envios_resultados = []
 
     async def pendientes(self, maximo=1):
         if self.falla_pendientes:
@@ -47,6 +49,13 @@ class ApiFalsa:
     async def resultado(self, job_id, ok, turnos=None, error=None):
         self.resultados.append({"id": job_id, "ok": ok, "turnos": turnos, "error": error})
 
+    async def envios_pendientes(self, maximo=5):
+        lote, self.envios = self.envios[:maximo], self.envios[maximo:]
+        return lote
+
+    async def envio_resultado(self, envio_id, ok, error=None):
+        self.envios_resultados.append({"id": envio_id, "ok": ok, "error": error})
+
     async def apagado(self):
         self.apagados += 1
 
@@ -60,6 +69,11 @@ class BodegaFalsa:
         if self.falla:
             raise RuntimeError("mongo caído")
         self.docs[doc["job_id"]] = doc
+
+    def guardar_envio(self, servicio, doc):
+        if self.falla:
+            raise RuntimeError("mongo caído")
+        self.docs[(servicio, doc["envio_id"])] = doc
 
 
 def trabajo(job_id="j1", enlace=ENLACE):
@@ -202,3 +216,71 @@ def test_el_cliente_exige_https_salvo_en_local():
         recolector.ClienteWorker("http://conversaciones.yohual.com", "t" * 40)
     recolector.ClienteWorker("https://conversaciones.yohual.com", "t" * 40)
     recolector.ClienteWorker("http://127.0.0.1:8787", "t" * 40)
+
+
+@pytest.mark.asyncio
+async def test_marca_como_dudosa_una_lectura_sin_respuestas_del_asistente():
+    solo_usuario = {"turns": [{"role": "user", "text_clean": f"mensaje {i}"} for i in range(4)],
+                    "quality_report": {"extraction_method": "data-message-author-role", "count_by_role": {"user": 4}}}
+
+    async def extraer(enlace, al_cambiar_fase=None):
+        return solo_usuario
+
+    r, api, bodega = armar(extraer=extraer)
+    await r.procesar(trabajo())
+    calidad = bodega.docs["j1"]["calidad"]
+    assert calidad["dudosa"] is True
+    assert "sin_respuestas_del_asistente" in calidad["motivos"]
+    # La persona no ve ningún error: la lectura se guarda y se le da por recibida.
+    assert api.resultados[-1]["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_una_lectura_normal_no_se_marca_como_dudosa():
+    r, api, bodega = armar()
+    await r.procesar(trabajo())
+    assert bodega.docs["j1"]["calidad"]["dudosa"] is False
+
+
+def envio(envio_id="e1", servicio="simulador", carga=None):
+    return {"id": envio_id, "participante_id": "p1", "servicio": servicio, "tipo": "encuesta",
+            "carga": {"p1": "Escríbeme a ana@correo.com", "p2": 4} if carga is None else carga,
+            "version_consentimiento": "sim-v1", "creado_ts": 1790000000}
+
+
+@pytest.mark.asyncio
+async def test_envio_se_guarda_anonimizado_y_se_avisa():
+    r, api, bodega = armar()
+    await r.procesar_envio(envio())
+    doc = bodega.docs[("simulador", "e1")]
+    assert "ana@correo.com" not in json.dumps(doc)
+    assert doc["carga"]["p2"] == 4
+    assert doc["participante_id"] == "p1" and doc["version_consentimiento"] == "sim-v1"
+    assert api.envios_resultados == [{"id": "e1", "ok": True, "error": None}]
+
+
+@pytest.mark.asyncio
+async def test_envio_con_servicio_raro_o_sin_carga_se_rechaza_sin_guardar():
+    r, api, bodega = armar()
+    await r.procesar_envio(envio(servicio="../admin"))
+    await r.procesar_envio(envio("e2", carga=[1, 2]))
+    assert bodega.docs == {}
+    assert [x["ok"] for x in api.envios_resultados] == [False, False]
+
+
+@pytest.mark.asyncio
+async def test_envio_con_mongo_caido_no_se_marca_como_hecho():
+    r, api, _ = armar(bodega=BodegaFalsa(falla=True))
+    with pytest.raises(ErrorDeAlmacenamiento):
+        await r.procesar_envio(envio())
+    assert api.envios_resultados == []
+
+
+@pytest.mark.asyncio
+async def test_bucle_una_vez_vacia_trabajos_y_envios():
+    r, api, bodega = armar(cola=[trabajo()])
+    api.envios = [envio(), envio("e2")]
+    codigo = await recolector.ejecutar(r, una_vez=True, intervalo=0.01, detener=asyncio.Event())
+    assert codigo == 0
+    assert "j1" in bodega.docs and ("simulador", "e2") in bodega.docs
+    assert len(api.envios_resultados) == 2
