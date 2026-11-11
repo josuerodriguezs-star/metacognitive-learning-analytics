@@ -1,7 +1,7 @@
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import worker, { limpiar } from "../src/index.js";
+import worker, { limpiar, enviarAlertas } from "../src/index.js";
 import { crearD1 } from "./d1_shim.js";
 
 const ORIGEN = "https://conversaciones.test";
@@ -572,4 +572,111 @@ test("limpiar: los envíos pendientes muy viejos se descartan sin conservar la c
   const fila = env.DB._db.prepare("SELECT estado, carga FROM envios WHERE id = ?").get(e.datos.id);
   assert.equal(fila.estado, "error");
   assert.equal(fila.carga, null);
+});
+
+// ------------------------------------------------------------------
+// Alertas del calendario y baja
+// ------------------------------------------------------------------
+
+const PREMIOS = {
+  awards: [
+    { id: 3, name: "ETIH", url: "https://etih.example/bases", events: [
+      { date: "2026-12-18", label: "Fin de tarifa anticipada", kind: "Cierre" },
+      { date: "2027-02-26", label: "Cierre final", kind: "Cierre" },
+      { date: "2027-03", label: "Resultados", kind: "Resultados" } ] },
+    { id: 4, name: "CODiE", url: "https://codie.example", events: [{ date: "2026-12-11", label: "Apertura", kind: "Apertura" }] },
+  ],
+};
+
+function prepararAlertas() {
+  env.URL_PREMIOS = "https://calendario.test/awards.json";
+  env.PUBLIC_URL_ACCESO = "https://acceso.test";
+  globalThis.fetch = async (url, opciones) => {
+    if (url === env.URL_PREMIOS) return new Response(JSON.stringify(PREMIOS), { status: 200 });
+    assert.equal(url, "https://api.resend.com/emails");
+    correos.push(JSON.parse(opciones.body));
+    return new Response("{}", { status: 200 });
+  };
+}
+
+async function suscribirse(claves) {
+  const { token } = await sesionConCookie();
+  await aceptarServicio(token, "calendario", "cal-v1");
+  const r = await llamar("PUT", "/api/suscripciones/calendario", { token, cuerpo: { claves } });
+  assert.equal(r.estado, 200);
+  correos.length = 0;
+}
+
+test("alertas: avisa a quien sigue el premio, un solo correo con enlace de baja, sin repetir", async () => {
+  await suscribirse(["3"]);
+  prepararAlertas();
+  // 2026-12-11 → el cierre del 18 está a 7 días; el premio 4 no se sigue.
+  const r = await enviarAlertas(env, "2026-12-11");
+  assert.equal(r.enviados, 1);
+  assert.equal(correos.length, 1);
+  const c = correos[0];
+  assert.deepEqual(c.to, [CORREO]);
+  assert.match(c.subject, /ETIH: cierre en 7 días/);
+  assert.ok(!c.text.includes("CODiE"));
+  assert.match(c.text, /https:\/\/acceso\.test\/api\/baja\?t=/);
+  assert.match(c.headers["List-Unsubscribe"], /\/api\/baja\?t=/);
+  assert.equal(c.headers["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click");
+  // Segunda corrida el mismo día: no repite.
+  assert.equal((await enviarAlertas(env, "2026-12-11")).enviados, 0);
+  assert.equal(correos.length, 1);
+});
+
+test("alertas: sin consentimiento vigente o en un día sin fechas, no manda nada", async () => {
+  await suscribirse(["3"]);
+  prepararAlertas();
+  assert.equal((await enviarAlertas(env, "2026-12-01")).enviados, 0);
+  env.DB._db.prepare("DELETE FROM consentimientos WHERE servicio = 'calendario'").run();
+  assert.equal((await enviarAlertas(env, "2026-12-11")).enviados, 0);
+  assert.equal(correos.length, 0);
+});
+
+test("alertas: si el correo falla no se marca como enviado y se reintenta", async () => {
+  await suscribirse(["3"]);
+  prepararAlertas();
+  const buena = globalThis.fetch;
+  globalThis.fetch = async (url, o) => (url === "https://api.resend.com/emails" ? new Response("{}", { status: 500 }) : buena(url, o));
+  assert.equal((await enviarAlertas(env, "2026-12-11")).enviados, 0);
+  globalThis.fetch = buena;
+  assert.equal((await enviarAlertas(env, "2026-12-11")).enviados, 1);
+});
+
+test("alertas: si no se puede leer la lista de premios, no hace nada", async () => {
+  await suscribirse(["3"]);
+  env.URL_PREMIOS = "https://calendario.test/awards.json";
+  globalThis.fetch = async () => new Response("no", { status: 500 });
+  assert.equal((await enviarAlertas(env, "2026-12-11")).enviados, 0);
+});
+
+test("baja: GET solo muestra el botón; POST borra las suscripciones; token alterado no sirve", async () => {
+  await suscribirse(["3", "4"]);
+  prepararAlertas();
+  await enviarAlertas(env, "2026-12-11");
+  const enlace = /api\/baja\?t=([^\s"]+)/.exec(correos[0].text)[1];
+  const ruta = `/api/baja?t=${enlace}`;
+
+  const g = await llamar("GET", ruta);
+  assert.equal(g.estado, 200);
+  assert.ok(g.texto.includes("<form"));
+  assert.equal(env.DB._db.prepare("SELECT COUNT(*) AS n FROM suscripciones").get().n, 2);
+
+  const mal = await llamar("POST", ruta.slice(0, -2) + "00");
+  assert.equal(mal.estado, 400);
+  assert.equal(env.DB._db.prepare("SELECT COUNT(*) AS n FROM suscripciones").get().n, 2);
+
+  const p = await llamar("POST", ruta);
+  assert.equal(p.estado, 200);
+  assert.equal(env.DB._db.prepare("SELECT COUNT(*) AS n FROM suscripciones").get().n, 0);
+});
+
+test("el código de acceso menciona el servicio desde el que se registra", async () => {
+  conSitios();
+  await llamar("POST", "/api/registro", { cuerpo: { email: CORREO, servicio: "calendario" } });
+  assert.match(correos.at(-1).text, /calendario de premios/);
+  const r = await llamar("POST", "/api/registro", { cuerpo: { email: CORREO, servicio: "otro" } });
+  assert.equal(r.estado, 400);
 });

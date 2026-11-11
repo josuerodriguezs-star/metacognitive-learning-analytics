@@ -105,3 +105,14 @@ CREATE TABLE IF NOT EXISTS suscripciones (
   creado_ts       INTEGER NOT NULL,
   PRIMARY KEY (participante_id, servicio, clave)
 );
+
+-- Recordatorios ya enviados (para no repetir el mismo aviso si el cron corre dos veces).
+CREATE TABLE IF NOT EXISTS alertas_enviadas (
+  participante_id TEXT NOT NULL,
+  servicio        TEXT NOT NULL,
+  clave           TEXT NOT NULL,
+  fecha_evento    TEXT NOT NULL,
+  dias            INTEGER NOT NULL,
+  ts              INTEGER NOT NULL,
+  PRIMARY KEY (participante_id, servicio, clave, fecha_evento, dias)
+);

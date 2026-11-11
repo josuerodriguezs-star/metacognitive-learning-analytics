@@ -33,7 +33,7 @@ import {
   emitirToken, leerToken, normalizarEmail, hashEmail, generarCodigo, hashCodigo,
   iguales, sha256Hex, hostsPermitidos, validarEnlace,
 } from "./seguridad.js";
-import { enviarCorreo, mensajeCodigo, mensajeListo, mensajeError } from "./correo.js";
+import { enviarCorreo, mensajeCodigo, mensajeListo, mensajeError, mensajeAlertas } from "./correo.js";
 
 // ------------------------------------------------------------------
 // Constantes
@@ -195,7 +195,8 @@ async function servidorEnLinea(env) {
 // ------------------------------------------------------------------
 
 async function registro(request, env) {
-  const { email: bruto } = await leerJson(request);
+  const { email: bruto, servicio: servicioBruto } = await leerJson(request);
+  const servicio = servicioDe(servicioBruto, "conversaciones");
   const email = normalizarEmail(bruto);
   if (!email) throw new ErrorHttp(400, "Escribe un correo válido, por ejemplo nombre@correo.com.");
 
@@ -213,7 +214,7 @@ async function registro(request, env) {
   ).bind(emailHash, await hashCodigo(env.APP_SECRET, emailHash, codigo), ahora() + CODIGO_VIGENCIA_SEG).run();
 
   try {
-    await enviarCorreo(env, { para: email, ...mensajeCodigo(codigo) });
+    await enviarCorreo(env, { para: email, ...mensajeCodigo(codigo, servicio) });
   } catch (e) {
     console.error("Fallo al enviar el código:", e.message);
     throw new ErrorHttp(502, "No pudimos enviar el correo en este momento. Inténtalo de nuevo en unos minutos.");
@@ -616,6 +617,149 @@ async function internoEnviosResultado(request, env) {
 }
 
 // ------------------------------------------------------------------
+// Alertas del calendario y baja
+// ------------------------------------------------------------------
+
+const DIAS_DE_AVISO = [30, 14, 7, 1, 0];
+const MAX_CORREOS_POR_CORRIDA = 90;   // el plan gratuito de Resend permite 100 al día
+
+function hex(buf) {
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function firmaBaja(env, pid) {
+  const llave = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(env.APP_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return hex(await crypto.subtle.sign("HMAC", llave, new TextEncoder().encode(`baja:${pid}`))).slice(0, 32);
+}
+
+async function tokenBaja(env, pid) {
+  return `${pid}.${await firmaBaja(env, pid)}`;
+}
+
+async function pidDeTokenBaja(env, token) {
+  const [pid, firma] = String(token || "").split(".");
+  if (!pid || !firma || !/^[A-Za-z0-9_-]{1,64}$/.test(pid)) return null;
+  const esperada = await firmaBaja(env, pid);
+  if (firma.length !== esperada.length) return null;
+  let dif = 0;
+  for (let i = 0; i < firma.length; i++) dif |= firma.charCodeAt(i) ^ esperada.charCodeAt(i);
+  return dif === 0 ? pid : null;
+}
+
+function paginaBaja(titulo, cuerpoHtml, estado = 200) {
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${titulo}</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:460px;margin:12vh auto;padding:0 20px;color:#1f2328}button{font:inherit;padding:10px 18px;border-radius:8px;border:0;background:#005fb8;color:#fff;cursor:pointer}</style></head><body><h1 style="font-size:22px">${titulo}</h1>${cuerpoHtml}</body></html>`;
+  return new Response(html, {
+    status: estado,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'",
+      "referrer-policy": "no-referrer",
+      "cache-control": "no-store",
+    },
+  });
+}
+
+/** GET muestra un botón (así un escáner de correos no da de baja a nadie); POST confirma. */
+async function baja(request, env, url) {
+  const token = url.searchParams.get("t");
+  const pid = await pidDeTokenBaja(env, token);
+  if (!pid) return paginaBaja("Enlace no válido", "<p>Este enlace de baja no es válido o está incompleto.</p>", 400);
+
+  if (request.method === "POST") {
+    await env.DB.prepare("DELETE FROM suscripciones WHERE participante_id = ?1 AND servicio = 'calendario'").bind(pid).run();
+    return paginaBaja("Listo", "<p>Ya no recibirás avisos del calendario de premios EdTech.</p>");
+  }
+  return paginaBaja(
+    "¿Dejar de recibir avisos?",
+    `<p>Dejarás de recibir los recordatorios del calendario de premios EdTech.</p>
+     <form method="post" action="/api/baja?t=${encodeURIComponent(token)}"><button type="submit">Sí, dejar de recibirlos</button></form>`);
+}
+
+const diaUtc = (s) => Math.floor(Date.parse(`${s}T00:00:00Z`) / 86400000);
+
+/** Corre cada mañana: manda a cada suscriptora un solo correo con lo que vence pronto. */
+export async function enviarAlertas(env, hoy = new Date().toISOString().slice(0, 10)) {
+  const fuente = env.URL_PREMIOS;
+  if (!fuente) return { enviados: 0, motivo: "sin URL_PREMIOS" };
+
+  let premios;
+  try {
+    const r = await fetch(fuente, { cf: { cacheTtl: 0 } });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    premios = (await r.json()).awards;
+    if (!Array.isArray(premios)) throw new Error("formato inesperado");
+  } catch (e) {
+    console.error("No se pudo leer la lista de premios:", e.message);
+    return { enviados: 0, motivo: "sin lista de premios" };
+  }
+  const porClave = new Map(premios.map((a) => [String(a.id), a]));
+  const t0 = diaUtc(hoy);
+
+  const { results } = await env.DB.prepare(
+    `SELECT s.participante_id AS pid, p.email AS email, s.clave AS clave
+     FROM suscripciones s
+     JOIN participantes p ON p.id = s.participante_id
+     JOIN consentimientos c ON c.participante_id = s.participante_id AND c.servicio = s.servicio
+     WHERE s.servicio = 'calendario' ORDER BY s.participante_id`
+  ).all();
+
+  const personas = new Map();
+  for (const f of results) {
+    if (!personas.has(f.pid)) personas.set(f.pid, { email: f.email, claves: [] });
+    personas.get(f.pid).claves.push(f.clave);
+  }
+
+  let enviados = 0;
+  for (const [pid, persona] of personas) {
+    if (enviados >= MAX_CORREOS_POR_CORRIDA) break;
+    const alertas = [];
+    const marcas = [];
+    for (const clave of persona.claves) {
+      const a = porClave.get(clave);
+      if (!a) continue;
+      for (const e of a.events || []) {
+        if (!["Cierre", "Apertura"].includes(e.kind) || typeof e.date !== "string" || e.date.length !== 10) continue;
+        const faltan = diaUtc(e.date) - t0;
+        if (!DIAS_DE_AVISO.includes(faltan)) continue;
+        const ya = await env.DB.prepare(
+          "SELECT 1 AS x FROM alertas_enviadas WHERE participante_id = ?1 AND servicio = 'calendario' AND clave = ?2 AND fecha_evento = ?3 AND dias = ?4"
+        ).bind(pid, clave, e.date, faltan).first();
+        if (ya) continue;
+        const cuando = faltan === 0 ? "HOY" : faltan === 1 ? "mañana" : `en ${faltan} días`;
+        alertas.push({
+          titulo: `${a.name}: ${e.kind.toLowerCase()} ${cuando}`,
+          detalle: `${e.label} (${e.date}).`,
+          url: typeof a.url === "string" && a.url.startsWith("https://") ? a.url : "",
+        });
+        marcas.push([clave, e.date, faltan]);
+      }
+    }
+    if (!alertas.length) continue;
+
+    const urlBaja = `${env.PUBLIC_URL_ACCESO || "https://acceso.yohual.com"}/api/baja?t=${encodeURIComponent(await tokenBaja(env, pid))}`;
+    try {
+      await enviarCorreo(env, {
+        para: persona.email,
+        ...mensajeAlertas(alertas, urlBaja),
+        cabeceras: { "List-Unsubscribe": `<${urlBaja}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
+      });
+    } catch (e) {
+      console.error("Fallo al enviar una alerta:", e.message);
+      continue;   // no se marca: se reintenta en la siguiente corrida
+    }
+    for (const [clave, fecha, dias] of marcas) {
+      await env.DB.prepare(
+        "INSERT OR IGNORE INTO alertas_enviadas (participante_id, servicio, clave, fecha_evento, dias, ts) VALUES (?1, 'calendario', ?2, ?3, ?4, ?5)"
+      ).bind(pid, clave, fecha, dias, ahora()).run();
+    }
+    enviados++;
+  }
+  return { enviados };
+}
+
+// ------------------------------------------------------------------
 // Limpieza programada
 // ------------------------------------------------------------------
 
@@ -642,6 +786,7 @@ export async function limpiar(env) {
   await env.DB.prepare(
     "DELETE FROM envios WHERE estado IN ('listo', 'error') AND terminado_ts < ?1"
   ).bind(n - 30 * dia).run();
+  await env.DB.prepare("DELETE FROM alertas_enviadas WHERE ts < ?1").bind(n - 120 * dia).run();
 }
 
 // ------------------------------------------------------------------
@@ -687,6 +832,7 @@ async function manejar(request, env, ctx, url) {
   if (metodo === "POST" && pathname === "/api/envios") return crearEnvio(request, env);
   const m = /^\/api\/estado\/([A-Za-z0-9]{1,64})$/.exec(pathname);
   if (metodo === "GET" && m) return estado(request, env, m[1]);
+  if (pathname === "/api/baja" && (metodo === "GET" || metodo === "POST")) return baja(request, env, url);
   const sus = /^\/api\/suscripciones\/([a-z]{1,32})$/.exec(pathname);
   if (sus && metodo === "GET") return leerSuscripciones(request, env, sus[1]);
   if (sus && metodo === "PUT") return guardarSuscripciones(request, env, sus[1]);
@@ -741,7 +887,8 @@ export default {
     }
   },
 
-  async scheduled(_evento, env, ctx) {
-    ctx.waitUntil(limpiar(env));
+  async scheduled(evento, env, ctx) {
+    // 14:00 UTC (8:00 CDMX): alertas del calendario. La otra hora: limpieza diaria.
+    ctx.waitUntil(evento.cron === "0 14 * * *" ? enviarAlertas(env) : limpiar(env));
   },
 };
